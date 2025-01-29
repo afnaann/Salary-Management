@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from .models import User, Employee, Salary
 from .serializers import  EmployeeSerializer, SalarySerializer, EmployeeSalarySerializer
 from django.db.models import Count, Avg, Sum
+from django.shortcuts import get_object_or_404
 
 
 class EmployeeAPIView(APIView):
@@ -12,8 +13,7 @@ class EmployeeAPIView(APIView):
     def get(self, request, pk=None):
         if pk:
             try:
-                user = User.objects.get(id=pk)
-                employee = Employee.objects.get(user=user)
+                employee = Employee.objects.select_related('user').get(user_id=pk)
                 serializer = EmployeeSerializer(employee)
                 return Response(serializer.data)
             except User.DoesNotExist:
@@ -21,7 +21,7 @@ class EmployeeAPIView(APIView):
             except Employee.DoesNotExist:
                 return Response({"error": "Employee details not found"}, status=status.HTTP_404_NOT_FOUND)
         else:
-            employees = Employee.objects.all()
+            employees = Employee.objects.all().select_related('user')
             serializer = EmployeeSerializer(employees, many=True)
             return Response(serializer.data)
 
@@ -41,10 +41,9 @@ class EmployeeAPIView(APIView):
             return Response({"detail": "You do not have permission to perform this action."}, status=403)
         
         try:
-            employee = Employee.objects.get(pk=pk)
-            user = User.objects.get(profile=employee)
-            print(user)
-            user.delete()
+            employee = Employee.objects.select_related('user').get(pk=pk)
+            employee.user.delete()
+            employee.delete()
             employee.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except Employee.DoesNotExist:
@@ -55,13 +54,10 @@ class SalaryAPIView(APIView):
     def get(self, request, pk=None):
         if pk:
             try:
-                user = User.objects.get(id=pk)
-            except User.DoesNotExist:
-                return Response({'error':'This User Does Not Exist'}, status=status.HTTP_400_BAD_REQUEST)
-            employee = Employee.objects.get(user=user)
-            
-            salaries = Salary.objects.filter(employee=employee).order_by('-pay_date')
-
+                employee = Employee.objects.prefetch_related('salaries').get(user_id=pk)
+            except Employee.DoesNotExist:
+                return Response({'error':'This User Does Not Exist'}, status=status.HTTP_400_BAD_REQUEST)            
+            salaries = employee.salaries.order_by('-pay_date')
         else:
             salaries = Salary.objects.all().order_by('-pay_date')
             
